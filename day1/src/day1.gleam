@@ -31,4 +31,11 @@ pub fn main() {
     |> int.sum
 
   io.println("Total distance between lists: " <> int.to_string(distance))
+
+  let similarity =
+    list1
+    |> list.map(fn(a) { a * list.count(list2, fn(b) { a == b }) })
+    |> int.sum
+
+  io.println("Similarity score: " <> int.to_string(similarity))
 }
