@@ -5,7 +5,7 @@ import gleam/string
 import simplifile
 
 pub fn main() {
-  let assert Ok(input) = simplifile.read("./input")
+  let assert Ok(input) = simplifile.read("./inputs/day1")
   let assert [list1, list2] =
     input
     |> string.split("\n")
