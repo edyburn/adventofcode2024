@@ -6,18 +6,17 @@ import gleam/result
 import gleam/string
 import simplifile
 
-fn dict_from_list_index(l) {
-  list.index_map(l, fn(v, i) { #(i, v) })
-  |> dict.from_list
-}
+type Dict2d =
+  Dict(#(Int, Int), String)
 
-fn string_to_2d_dict(s: String) {
+fn string_to_2d_dict(s: String) -> Dict2d {
   string.split(s, "\n")
-  |> list.map(fn(line) {
+  |> list.index_map(fn(line, y) {
     string.split(line, "")
-    |> dict_from_list_index
+    |> list.index_map(fn(char, x) { #(#(x, y), char) })
   })
-  |> dict_from_list_index
+  |> list.flatten
+  |> dict.from_list
 }
 
 // offsets for each rotated position of the letters
@@ -35,40 +34,43 @@ const x_mas_offsets = [
   #(#(-1, -1), #(1, -1), #(1, 1), #(-1, 1)),
 ]
 
-fn apply_offset(coords: #(Int, Int), offset: #(Int, Int)) {
-  #(coords.0 + offset.0, coords.1 + offset.1)
+fn apply_offset(start: #(Int, Int), offset: #(Int, Int)) {
+  #(start.0 + offset.0, start.1 + offset.1)
 }
 
-fn check_value(
-  d: Dict(Int, Dict(Int, String)),
-  coords: #(Int, Int),
+fn check_offset(
+  d: Dict2d,
+  start: #(Int, Int),
+  offset: #(Int, Int),
   expect: String,
 ) {
-  use row <- result.try(dict.get(d, coords.1))
-  use value <- result.try(dict.get(row, coords.0))
+  let target = apply_offset(start, offset)
+  use value <- result.try(dict.get(d, target))
   case value == expect {
     True -> Ok(Nil)
     False -> Error(Nil)
   }
 }
 
-fn check_xmas_positions(d: Dict(Int, Dict(Int, String)), coords: #(Int, Int)) {
+fn check_xmas_positions(d: Dict2d, coords: #(Int, Int)) {
+  let check = fn(offset, expect) { check_offset(d, coords, offset, expect) }
   list.map(xmas_offsets, fn(offsets) {
-    use _ <- result.try(check_value(d, apply_offset(coords, offsets.0), "M"))
-    use _ <- result.try(check_value(d, apply_offset(coords, offsets.1), "A"))
-    use _ <- result.try(check_value(d, apply_offset(coords, offsets.2), "S"))
+    use _ <- result.try(check(offsets.0, "M"))
+    use _ <- result.try(check(offsets.1, "A"))
+    use _ <- result.try(check(offsets.2, "S"))
     Ok(1)
   })
   |> result.values
   |> int.sum
 }
 
-fn check_x_mas_positions(d: Dict(Int, Dict(Int, String)), coords: #(Int, Int)) {
+fn check_x_mas_positions(d: Dict2d, coords: #(Int, Int)) {
+  let check = fn(offset, expect) { check_offset(d, coords, offset, expect) }
   list.map(x_mas_offsets, fn(offsets) {
-    use _ <- result.try(check_value(d, apply_offset(coords, offsets.0), "M"))
-    use _ <- result.try(check_value(d, apply_offset(coords, offsets.1), "M"))
-    use _ <- result.try(check_value(d, apply_offset(coords, offsets.2), "S"))
-    use _ <- result.try(check_value(d, apply_offset(coords, offsets.3), "S"))
+    use _ <- result.try(check(offsets.0, "M"))
+    use _ <- result.try(check(offsets.1, "M"))
+    use _ <- result.try(check(offsets.2, "S"))
+    use _ <- result.try(check(offsets.3, "S"))
     Ok(1)
   })
   |> result.values
@@ -84,28 +86,22 @@ pub fn main() {
   let d = input |> string_to_2d_dict
   let xmas_count =
     d
-    |> dict.fold(0, fn(count, y, row) {
-      dict.fold(row, 0, fn(row_count, x, value) {
-        case value {
-          "X" -> row_count + check_xmas_positions(d, #(x, y))
-          _ -> row_count
-        }
-      })
-      + count
+    |> dict.fold(0, fn(count, coords, value) {
+      case value {
+        "X" -> count + check_xmas_positions(d, coords)
+        _ -> count
+      }
     })
 
   io.println("XMAS occurrences: " <> int.to_string(xmas_count))
 
   let x_mas_count =
     d
-    |> dict.fold(0, fn(count, y, row) {
-      dict.fold(row, 0, fn(row_count, x, value) {
-        case value {
-          "A" -> row_count + check_x_mas_positions(d, #(x, y))
-          _ -> row_count
-        }
-      })
-      + count
+    |> dict.fold(0, fn(count, coords, value) {
+      case value {
+        "A" -> count + check_x_mas_positions(d, coords)
+        _ -> count
+      }
     })
   io.println("X-MAS occurrences: " <> int.to_string(x_mas_count))
 
