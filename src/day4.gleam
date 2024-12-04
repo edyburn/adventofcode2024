@@ -21,11 +21,18 @@ fn string_to_2d_dict(s: String) {
 }
 
 // offsets for each rotated position of the letters
-const all_offsets = [
+const xmas_offsets = [
   #(#(1, 0), #(2, 0), #(3, 0)), #(#(1, 1), #(2, 2), #(3, 3)),
   #(#(0, 1), #(0, 2), #(0, 3)), #(#(-1, 1), #(-2, 2), #(-3, 3)),
   #(#(-1, 0), #(-2, 0), #(-3, 0)), #(#(-1, -1), #(-2, -2), #(-3, -3)),
   #(#(0, -1), #(0, -2), #(0, -3)), #(#(1, -1), #(2, -2), #(3, -3)),
+]
+
+const x_mas_offsets = [
+  #(#(1, -1), #(1, 1), #(-1, 1), #(-1, -1)),
+  #(#(1, 1), #(-1, 1), #(-1, -1), #(1, -1)),
+  #(#(-1, 1), #(-1, -1), #(1, -1), #(1, 1)),
+  #(#(-1, -1), #(1, -1), #(1, 1), #(-1, 1)),
 ]
 
 fn apply_offset(coords: #(Int, Int), offset: #(Int, Int)) {
@@ -45,11 +52,23 @@ fn check_value(
   }
 }
 
-fn check_positions(d: Dict(Int, Dict(Int, String)), coords: #(Int, Int)) {
-  list.map(all_offsets, fn(offsets) {
+fn check_xmas_positions(d: Dict(Int, Dict(Int, String)), coords: #(Int, Int)) {
+  list.map(xmas_offsets, fn(offsets) {
     use _ <- result.try(check_value(d, apply_offset(coords, offsets.0), "M"))
     use _ <- result.try(check_value(d, apply_offset(coords, offsets.1), "A"))
     use _ <- result.try(check_value(d, apply_offset(coords, offsets.2), "S"))
+    Ok(1)
+  })
+  |> result.values
+  |> int.sum
+}
+
+fn check_x_mas_positions(d: Dict(Int, Dict(Int, String)), coords: #(Int, Int)) {
+  list.map(x_mas_offsets, fn(offsets) {
+    use _ <- result.try(check_value(d, apply_offset(coords, offsets.0), "M"))
+    use _ <- result.try(check_value(d, apply_offset(coords, offsets.1), "M"))
+    use _ <- result.try(check_value(d, apply_offset(coords, offsets.2), "S"))
+    use _ <- result.try(check_value(d, apply_offset(coords, offsets.3), "S"))
     Ok(1)
   })
   |> result.values
@@ -63,19 +82,32 @@ pub fn main() {
   )
 
   let d = input |> string_to_2d_dict
-  let count =
+  let xmas_count =
     d
     |> dict.fold(0, fn(count, y, row) {
       dict.fold(row, 0, fn(row_count, x, value) {
         case value {
-          "X" -> row_count + check_positions(d, #(x, y))
+          "X" -> row_count + check_xmas_positions(d, #(x, y))
           _ -> row_count
         }
       })
       + count
     })
 
-  io.println("Word occurrences: " <> int.to_string(count))
+  io.println("XMAS occurrences: " <> int.to_string(xmas_count))
+
+  let x_mas_count =
+    d
+    |> dict.fold(0, fn(count, y, row) {
+      dict.fold(row, 0, fn(row_count, x, value) {
+        case value {
+          "A" -> row_count + check_x_mas_positions(d, #(x, y))
+          _ -> row_count
+        }
+      })
+      + count
+    })
+  io.println("X-MAS occurrences: " <> int.to_string(x_mas_count))
 
   Ok(Nil)
 }
