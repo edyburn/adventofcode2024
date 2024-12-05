@@ -88,6 +88,45 @@ fn check_ordering_loop(update: Update, rules: Rules, seen: Set(Int)) {
   }
 }
 
+fn resort_incorrect(update: Update, rules: Rules) {
+  resort_incorrect_loop(update, rules, [])
+}
+
+fn resort_incorrect_loop(update: Update, rules: Rules, seen: List(Int)) {
+  case update {
+    [i, ..rest] -> {
+      let pages_after =
+        rules
+        |> list.filter_map(fn(rule) {
+          case rule.0 == i {
+            True -> Ok(rule.1)
+            False -> Error(Nil)
+          }
+        })
+        |> set.from_list
+      let overlap = set.intersection(set.from_list(seen), pages_after)
+      case overlap |> set.size == 0 {
+        // The page is correct, so add it to the end of the list
+        True -> resort_incorrect_loop(rest, rules, list.append(seen, [i]))
+        // The page is incorrect, so need to insert it before the first page
+        // encountered from the overlap set
+        False -> {
+          let #(new_seen, _) =
+            list.fold(seen, #([], False), fn(acc, v) {
+              let #(new_list, inserted) = acc
+              case set.contains(overlap, v), inserted {
+                True, False -> #(list.append(new_list, [i, v]), True)
+                _, _ -> #(list.append(new_list, [v]), inserted)
+              }
+            })
+          resort_incorrect_loop(rest, rules, new_seen)
+        }
+      }
+    }
+    [] -> seen
+  }
+}
+
 fn get_middle_page(update: Update) {
   update
   // Int division is truncated, so this should drop just before the midpoint
@@ -102,22 +141,36 @@ pub fn main() {
     |> result.replace_error("Failed to read input file"),
   )
 
-  let sum =
-    input
-    |> parse_input
-    |> fn(data) {
-      let #(rules, updates) = data
-      updates
-      |> list.map(fn(update) {
-        case check_ordering(update, rules) {
-          True -> get_middle_page(update)
-          False -> 0
-        }
-      })
-      |> int.sum
-    }
+  let #(rules, updates) = parse_input(input)
 
-  io.println("Sum of middle pages from correct updates: " <> int.to_string(sum))
+  let correct_sum =
+    updates
+    |> list.map(fn(update) {
+      case check_ordering(update, rules) {
+        True -> get_middle_page(update)
+        False -> 0
+      }
+    })
+    |> int.sum
+
+  io.println(
+    "Sum of middle pages from correct updates: " <> int.to_string(correct_sum),
+  )
+
+  let incorrect_sum =
+    updates
+    |> list.map(fn(update) {
+      case check_ordering(update, rules) {
+        True -> 0
+        False -> get_middle_page(resort_incorrect(update, rules))
+      }
+    })
+    |> int.sum
+
+  io.println(
+    "Sum of middle pages from incorrect updates: "
+    <> int.to_string(incorrect_sum),
+  )
 
   Ok(Nil)
 }
