@@ -25,7 +25,7 @@ type Coord =
 type CellContent {
   Empty
   Obstruction
-  Visited
+  Visited(directions: List(Direction))
 }
 
 type Grid =
@@ -58,7 +58,7 @@ fn parse_input(input: String) -> State {
       case c {
         "." -> #(list.append(grid, [#(coord, Empty)]), guard)
         "#" -> #(list.append(grid, [#(coord, Obstruction)]), guard)
-        "^" -> #(list.append(grid, [#(coord, Visited)]), Some(coord))
+        "^" -> #(list.append(grid, [#(coord, Visited([Up]))]), Some(coord))
         _ -> panic as "Unexpected character in input"
       }
     })
@@ -89,29 +89,49 @@ fn rotate_direction(direction: Direction) -> Direction {
   }
 }
 
-fn move_guard(state: State) -> State {
+type FinalMove {
+  LeftGrid(grid: Grid)
+  Looping
+}
+
+fn move_guard(state: State) -> Result(State, FinalMove) {
   let next_guard_coord = get_next_guard_coord(state.guard)
   let direction = state.guard.direction
   case dict.get(state.grid, next_guard_coord) {
     Ok(Obstruction) ->
-      State(
+      Ok(State(
         state.grid,
         GuardState(..state.guard, direction: rotate_direction(direction)),
-      )
-    Error(Nil) -> State(state.grid, GuardState(next_guard_coord, direction))
+      ))
+    Error(Nil) -> Error(LeftGrid(state.grid))
+    Ok(Visited(directions)) -> {
+      case list.contains(directions, direction) {
+        True -> Error(Looping)
+        False ->
+          Ok(State(
+            dict.upsert(state.grid, next_guard_coord, fn(prev) {
+              case prev {
+                Some(Visited(directions)) ->
+                  Visited(list.append(directions, [direction]))
+                _ -> Visited([direction])
+              }
+            }),
+            GuardState(next_guard_coord, direction),
+          ))
+      }
+    }
     _ ->
-      State(
-        dict.insert(state.grid, next_guard_coord, Visited),
+      Ok(State(
+        dict.insert(state.grid, next_guard_coord, Visited([direction])),
         GuardState(next_guard_coord, direction),
-      )
+      ))
   }
 }
 
 fn predict_route(state: State) {
-  let next_state = move_guard(state)
-  case dict.has_key(next_state.grid, next_state.guard.coord) {
-    True -> predict_route(next_state)
-    False -> next_state
+  case move_guard(state) {
+    Ok(next_state) -> predict_route(next_state)
+    Error(err) -> err
   }
 }
 
@@ -120,17 +140,45 @@ pub fn main() {
     simplifile.read("./inputs/day6")
     |> result.replace_error("Failed to read input file"),
   )
+  let state = parse_input(input)
+  let assert LeftGrid(predicted_route) = predict_route(state)
 
   let visited_positions =
-    input
-    |> parse_input
-    |> predict_route
-    |> fn(state) {
-      dict.values(state.grid)
-      |> list.filter(fn(c) { c == Visited })
-      |> list.length
-    }
+    dict.values(predicted_route)
+    |> list.filter(fn(c) {
+      case c {
+        Visited(_) -> True
+        _ -> False
+      }
+    })
+    |> list.length
+
   io.println("Visited positions: " <> int.to_string(visited_positions))
+
+  let obstructable_positions =
+    predicted_route
+    |> dict.fold([], fn(acc, key, value) {
+      case value {
+        Visited(_) if key != state.guard.coord -> [key, ..acc]
+        _ -> acc
+      }
+    })
+  let loops =
+    obstructable_positions
+    |> list.map(fn(coord) {
+      case
+        predict_route(State(
+          dict.insert(state.grid, coord, Obstruction),
+          state.guard,
+        ))
+      {
+        Looping -> 1
+        _ -> 0
+      }
+    })
+    |> int.sum
+
+  io.println("Possible loop obstructions: " <> int.to_string(loops))
 
   Ok(Nil)
 }
