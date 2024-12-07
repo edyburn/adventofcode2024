@@ -54,25 +54,59 @@ fn try_operators(numbers: List(Int)) -> List(Int) {
   }
 }
 
+fn concat_op(a: Int, b: Int) -> Int {
+  { int.to_string(a) <> int.to_string(b) }
+  |> int.parse
+  |> result.lazy_unwrap(fn() { panic as "Failed to parse in concat" })
+}
+
+fn try_all_operators(numbers: List(Int)) -> List(Int) {
+  case numbers {
+    [a, b, ..rest] ->
+      list.flatten([
+        try_all_operators([a + b, ..rest]),
+        try_all_operators([a * b, ..rest]),
+        try_all_operators([concat_op(a, b), ..rest]),
+      ])
+    _ -> numbers
+  }
+}
+
+fn check_equations(
+  equations: List(Equation),
+  test_fn: fn(List(Int)) -> List(Int),
+) {
+  list.map(equations, fn(equation) {
+    case list.any(test_fn(equation.numbers), fn(r) { r == equation.target }) {
+      True -> equation.target
+      False -> 0
+    }
+  })
+}
+
 pub fn main() {
   use input <- result.try(
     simplifile.read("./inputs/day7")
     |> result.replace_error("Failed to read input file"),
   )
-
-  let total =
-    input
-    |> parse_input
-    |> list.map(fn(equation) {
-      case
-        list.any(try_operators(equation.numbers), fn(r) { r == equation.target })
-      {
-        True -> equation.target
-        False -> 0
-      }
-    })
+  let parsed = parse_input(input)
+  let total_2op =
+    parsed
+    |> check_equations(try_operators)
     |> int.sum
 
-  io.println("Total calibration result: " <> int.to_string(total))
+  io.println(
+    "Total calibration result with 2 operators: " <> int.to_string(total_2op),
+  )
+
+  let total_3op =
+    parsed
+    |> check_equations(try_all_operators)
+    |> int.sum
+
+  io.println(
+    "Total calibration result with 3 operators: " <> int.to_string(total_3op),
+  )
+
   Ok(Nil)
 }
