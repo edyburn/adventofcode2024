@@ -40,6 +40,41 @@ fn get_antinodes(positions: List(#(Int, Int))) {
   |> list.flatten
 }
 
+fn gcd(a, b) {
+  case a, b {
+    a, b if a == b -> a
+    a, b if a > b -> gcd(a - b, b)
+    _, _ -> gcd(a, b - a)
+  }
+}
+
+fn extrapolate(start: #(Int, Int), offset: #(Int, Int), size: #(Int, Int)) {
+  let coord = add_pair(start, offset)
+  case coord.0 >= 0 && coord.0 < size.0 && coord.1 >= 0 && coord.1 < size.1 {
+    True -> [coord, ..extrapolate(coord, offset, size)]
+    False -> []
+  }
+}
+
+fn get_harmonic_antinodes(positions: List(#(Int, Int)), size: #(Int, Int)) {
+  positions
+  |> list.combination_pairs
+  |> list.map(fn(p) {
+    let #(a, b) = p
+    let diff = case sub_pair(a, b) {
+      #(0, y) -> #(0, y)
+      #(x, 0) -> #(x, 0)
+      #(x, y) -> {
+        let divisor = gcd(int.absolute_value(x), int.absolute_value(y))
+        #(x / divisor, y / divisor)
+      }
+    }
+    [extrapolate(a, diff, size), [a], extrapolate(a, #(-diff.0, -diff.1), size)]
+    |> list.flatten
+  })
+  |> list.flatten
+}
+
 pub fn main() {
   use input <- result.try(
     simplifile.read("./inputs/day8")
@@ -66,6 +101,7 @@ pub fn main() {
         }
       })
     })
+
   let unique_antinodes =
     freq_position_map
     |> dict.values
@@ -78,6 +114,19 @@ pub fn main() {
     |> list.length
 
   io.println("Unique antinodes: " <> int.to_string(unique_antinodes))
+
+  let harmonic_antinodes =
+    freq_position_map
+    |> dict.values
+    |> list.map(get_harmonic_antinodes(_, #(width, height)))
+    |> list.flatten
+    |> list.unique
+    |> list.length
+
+  io.println(
+    "Unique antinodes with resonant harmonics: "
+    <> int.to_string(harmonic_antinodes),
+  )
 
   Ok(Nil)
 }
