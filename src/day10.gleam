@@ -85,6 +85,10 @@ fn score_trailhead(trails: List(List(#(Int, Int)))) {
   trails |> list.map(list.first) |> list.unique |> list.length
 }
 
+fn rate_trailhead(trails: List(List(#(Int, Int)))) {
+  trails |> list.length
+}
+
 pub fn main() {
   use input <- result.try(
     simplifile.read("./inputs/day10")
@@ -92,14 +96,17 @@ pub fn main() {
   )
 
   let map = input |> parse_input
-  let sum =
+  let trails =
     find_trailheads(map)
     |> list.map(find_trails(_, 0, [], map))
     |> result.values
-    |> list.map(score_trailhead)
-    |> int.sum
+  let sum = trails |> list.map(score_trailhead) |> int.sum
 
   io.println("Sum of trailhead scores: " <> int.to_string(sum))
+
+  let ratings = trails |> list.map(rate_trailhead) |> int.sum
+
+  io.println("Sum of trailhead ratings: " <> int.to_string(ratings))
 
   Ok(Nil)
 }
