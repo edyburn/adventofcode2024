@@ -95,13 +95,19 @@ fn get_plot_perimeter(pos: #(Int, Int), region: Set(#(Int, Int))) {
   set.difference(adjacent, region) |> set.size
 }
 
+fn get_plot_sides(pos: #(Int, Int), region: Set(#(Int, Int))) {
+  get_adjacent(pos)
+  |> list.zip(["R", "D", "L", "U"])
+  |> list.filter(fn(p) { !set.contains(region, p.0) })
+}
+
 pub fn main() {
   use input <- result.try(simplifile.read("./inputs/day12"))
 
   let parsed = parse_input(input)
   let regions = find_regions(parsed)
 
-  let total =
+  let total_for_perimeter =
     regions
     |> list.map(fn(region) {
       let area = set.size(region)
@@ -114,7 +120,34 @@ pub fn main() {
     })
     |> int.sum
 
-  io.println("Total fencing price: " <> int.to_string(total))
+  io.println(
+    "Total fencing price for perimeter: " <> int.to_string(total_for_perimeter),
+  )
+
+  let total_for_sides =
+    regions
+    |> list.map(fn(region) {
+      let area = set.size(region)
+      let sides =
+        region
+        |> set.to_list
+        |> list.flat_map(get_plot_sides(_, region))
+        |> fn(segments) {
+          ["R", "D", "L", "U"]
+          |> list.map(fn(dir) {
+            list.filter(segments, fn(s) { s.1 == dir })
+            |> dict.from_list
+            |> find_regions
+            |> list.length
+          })
+          |> int.sum
+        }
+      area * sides
+    })
+    |> int.sum
+  io.println(
+    "Total fencing price for sides: " <> int.to_string(total_for_sides),
+  )
 
   Ok(Nil)
 }
