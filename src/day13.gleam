@@ -1,12 +1,11 @@
+import gleam/float
 import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{Some}
-import gleam/order
 import gleam/regexp
 import gleam/result
 import gleam/string
-import rememo/memo
 import simplifile
 
 // const example = "Button A: X+94, Y+34
@@ -57,72 +56,76 @@ fn parse_input(input: String) {
   })
 }
 
-fn get_position(a: Int, b: Int, machine: Machine) {
-  let x = a * machine.a.0 + b * machine.b.0
-  let y = a * machine.a.1 + b * machine.b.1
-  #(x, y)
+// a * a_x + b * b_x = p_x
+// a * a_y + b * b_y = p_y
+// minimize a * 3 + b * 1 (just one more possible solution besides a=0 and b=0?)
+// a = (p_y - b * b_y) / a_y
+// (a_x / a_y) * (p_y - b * b_y) + b * b_x = p_x
+// b * (b_x - b_y * (a_x / a_y)) = p_x - p_y * (a_x / a_y)
+// b = (p_x - p_y * (a_x / a_y)) / (b_x - b_y * (a_x / a_y))
+
+fn check_solution(a: Int, b: Int, machine: Machine) {
+  let x = machine.a.0 * a + machine.b.0 * b
+  let y = machine.a.1 * a + machine.b.1 * b
+  case x == machine.prize.0 && y == machine.prize.1 {
+    True -> Ok(#(a, b))
+    False -> Error(Nil)
+  }
 }
 
-fn cmp_pair(first: #(Int, Int), second: #(Int, Int)) {
-  case int.compare(first.0, second.0), int.compare(first.1, second.1) {
-    order.Eq, order.Eq -> order.Eq
-    order.Gt, _ | _, order.Gt -> order.Gt
-    _, _ -> order.Lt
+fn get_machine_solution(machine: Machine) {
+  let a_x = int.to_float(machine.a.0)
+  let a_y = int.to_float(machine.a.1)
+  let b_x = int.to_float(machine.b.0)
+  let b_y = int.to_float(machine.b.1)
+  let p_x = int.to_float(machine.prize.0)
+  let p_y = int.to_float(machine.prize.1)
+  let b =
+    { p_x -. { p_y *. { a_x /. a_y } } } /. { b_x -. { b_y *. { a_x /. a_y } } }
+  let a = {
+    { p_y -. { b *. b_y } } /. a_y
   }
+
+  #(float.round(a), float.round(b))
 }
 
-fn push_buttons(a: Int, b: Int, tokens: Int, machine: Machine, cache) {
-  use <- memo.memoize(cache, #(a, b, tokens, machine))
-  let a_result = {
-    let new_a = a + 1
-    let new_tokens = tokens + 3
-    let new_pos = get_position(new_a, b, machine)
-    case cmp_pair(new_pos, machine.prize) {
-      order.Eq -> Ok(new_tokens)
-      order.Gt -> Error(Nil)
-      order.Lt -> {
-        case new_a > 100 {
-          True -> Error(Nil)
-          False -> push_buttons(new_a, b, new_tokens, machine, cache)
-        }
-      }
-    }
-  }
-  let b_result = {
-    let new_b = b + 1
-    let new_tokens = tokens + 1
-    let new_pos = get_position(a, new_b, machine)
-    case cmp_pair(new_pos, machine.prize) {
-      order.Eq -> Ok(new_tokens)
-      order.Gt -> Error(Nil)
-      order.Lt -> {
-        case new_b > 100 {
-          True -> Error(Nil)
-          False -> push_buttons(a, new_b, new_tokens, machine, cache)
-        }
-      }
-    }
-  }
-  case a_result, b_result {
-    Ok(a), Ok(b) if a < b -> Ok(a)
-    Ok(a), Ok(b) -> Ok(b)
-    Ok(a), Error(..) -> Ok(a)
-    Error(..), Ok(b) -> Ok(b)
-    Error(..), Error(..) -> Error(Nil)
-  }
+fn get_machine_min_tokens(machine: Machine) {
+  [
+    #(machine.prize.0 / machine.a.0, 0),
+    #(0, machine.prize.0 / machine.b.0),
+    get_machine_solution(machine),
+  ]
+  |> list.map(fn(solution) { check_solution(solution.0, solution.1, machine) })
+  |> result.values
+  |> list.map(fn(solution) { solution.0 * 3 + solution.1 })
+  |> list.sort(int.compare)
+  |> list.first
 }
 
 pub fn main() {
   use input <- result.try(simplifile.read("./inputs/day13"))
-  use cache <- memo.create()
 
-  let tokens =
-    parse_input(input)
-    |> list.map(push_buttons(0, 0, 0, _, cache))
+  let machines = parse_input(input)
+  let tokens_p1 =
+    machines
+    |> list.map(get_machine_min_tokens)
     |> result.values
     |> int.sum
 
-  io.println("Fewest tokens to win all: " <> int.to_string(tokens))
+  io.println("Fewest tokens to win all (part 1): " <> int.to_string(tokens_p1))
+
+  let extra_offset = 10_000_000_000_000
+  let machines =
+    list.map(machines, fn(m) {
+      Machine(..m, prize: #(m.prize.0 + extra_offset, m.prize.1 + extra_offset))
+    })
+  let tokens_p2 =
+    machines
+    |> list.map(get_machine_min_tokens)
+    |> result.values
+    |> int.sum
+
+  io.println("Fewest tokens to win all (part 2): " <> int.to_string(tokens_p2))
 
   Ok(Nil)
 }
