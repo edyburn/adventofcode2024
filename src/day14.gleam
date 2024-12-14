@@ -1,4 +1,6 @@
-import gleam/dict
+import gleam/dict.{type Dict}
+import gleam/erlang
+import gleam/function
 import gleam/int
 import gleam/io
 import gleam/list
@@ -6,6 +8,7 @@ import gleam/option
 import gleam/regexp.{Match}
 import gleam/result
 import gleam/string
+import gleam/yielder
 import simplifile
 
 // const example = "p=0,4 v=3,-3
@@ -74,6 +77,23 @@ fn get_safety_factor(positions: List(#(Int, Int)), bounds: #(Int, Int)) {
   |> list.fold(1, fn(acc, v) { acc * list.length(v) })
 }
 
+fn group_positions(positions: List(#(Int, Int))) {
+  list.group(positions, function.identity)
+  |> dict.map_values(fn(_, values) { list.length(values) })
+}
+
+fn print_map(grouped: Dict(#(Int, Int), Int), bounds: #(Int, Int)) {
+  list.each(list.range(0, bounds.1 - 1), fn(y) {
+    list.each(list.range(0, bounds.0 - 1), fn(x) {
+      io.print(case dict.get(grouped, #(x, y)) {
+        Ok(count) -> int.to_string(count)
+        Error(..) -> " "
+      })
+    })
+    io.print("\n")
+  })
+}
+
 pub fn main() {
   use input <- result.try(simplifile.read("./inputs/day14"))
   let input_dimensions = #(101, 103)
@@ -87,6 +107,23 @@ pub fn main() {
     |> get_safety_factor(dimensions)
 
   io.println("Safety factor after 100s: " <> int.to_string(safety_factor_100))
+
+  yielder.iterate(0, fn(i) { i + 1 })
+  |> yielder.fold_until(Nil, fn(_, i) {
+    let positions = list.map(robots, simulate_robot(_, dimensions, i))
+    let grouped = group_positions(positions)
+    case dict.values(grouped) |> list.all(fn(v) { v == 1 }) {
+      True -> {
+        io.println("Iteration " <> int.to_string(i))
+        print_map(grouped, dimensions)
+        case erlang.get_line("Stop? (y to exit): ") {
+          Ok("y\n") -> list.Stop(Nil)
+          _ -> list.Continue(Nil)
+        }
+      }
+      False -> list.Continue(Nil)
+    }
+  })
 
   Ok(Nil)
 }
