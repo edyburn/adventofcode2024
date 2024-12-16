@@ -3,6 +3,7 @@ import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{Some}
+import gleam/pair
 import gleam/result
 import gleam/set.{type Set}
 import gleam/string
@@ -58,8 +59,15 @@ type Direction {
   W
 }
 
+type PosDir =
+  #(Pos, Direction)
+
+type Node {
+  Node(dist: Int, prevs: Set(PosDir))
+}
+
 type State {
-  State(visited: Set(Pos), unvisited: Dict(Pos, #(Int, Direction, Set(Pos))))
+  State(nodes: Dict(PosDir, Node), visited: Set(PosDir), unvisited: Set(PosDir))
 }
 
 fn parse_input(input: String) {
@@ -85,58 +93,82 @@ fn parse_input(input: String) {
   }
 }
 
-fn get_adjacent(pos: Pos) {
-  [
-    #(E, #(pos.0 + 1, pos.1)),
-    #(S, #(pos.0, pos.1 + 1)),
-    #(W, #(pos.0 - 1, pos.1)),
-    #(N, #(pos.0, pos.1 - 1)),
-  ]
+fn get_edges(posdir: PosDir) {
+  let #(pos, dir) = posdir
+  let adjacent = #(
+    case dir {
+      E -> #(#(pos.0 + 1, pos.1), E)
+      S -> #(#(pos.0, pos.1 + 1), S)
+      W -> #(#(pos.0 - 1, pos.1), W)
+      N -> #(#(pos.0, pos.1 - 1), N)
+    },
+    1,
+  )
+  let rotations =
+    case dir {
+      E -> [N, S]
+      S -> [E, W]
+      W -> [N, S]
+      N -> [E, W]
+    }
+    |> list.map(fn(d) { #(#(pos, d), 1000) })
+  [adjacent, ..rotations]
 }
 
 fn find_paths(maze: Maze, state: State) {
-  let assert Ok(current) =
-    dict.fold(state.unvisited, Error(Nil), fn(acc, pos, val) {
-      case acc {
-        Error(..) -> Ok(#(pos, val))
-        Ok(#(_, #(min_distance, _, _))) if val.0 < min_distance ->
-          Ok(#(pos, val))
-        _ -> acc
-      }
-    })
-  let #(curr_pos, #(distance, direction, paths)) = current
-  case curr_pos == maze.end {
-    True -> #(distance, set.size(paths) + 1)
+  let assert Ok(#(curr_posdir, curr_node)) =
+    set.fold(
+      state.unvisited,
+      Error(Nil),
+      fn(acc: Result(#(PosDir, Node), Nil), posdir) {
+        let assert Ok(node) = dict.get(state.nodes, posdir)
+        case acc {
+          Error(..) -> Ok(#(posdir, node))
+          Ok(#(_, min_node)) if node.dist < min_node.dist -> Ok(#(posdir, node))
+          _ -> acc
+        }
+      },
+    )
+  case curr_posdir.0 == maze.end {
+    True -> {
+      let tiles = set.map(curr_node.prevs, pair.first) |> set.size()
+      #(curr_node.dist, tiles + 1)
+    }
     False -> {
-      let new_visited = set.insert(state.visited, curr_pos)
-      let new_paths = set.insert(paths, curr_pos)
-      let new_unvisited =
-        get_adjacent(curr_pos)
-        |> list.filter(fn(val) { !set.contains(maze.walls, val.1) })
-        |> list.fold(dict.delete(state.unvisited, curr_pos), fn(d, val) {
-          dict.upsert(d, val.1, fn(prev) {
-            let new_dist =
-              distance
-              + case direction != val.0 {
-                True -> 1001
-                False -> 1
-              }
-            case prev {
-              Some(#(prev_dist, prev_dir, prev_paths)) if prev_dist < new_dist -> #(
-                prev_dist,
-                prev_dir,
-                prev_paths,
-              )
-              Some(#(prev_dist, prev_dir, prev_paths)) if prev_dist == new_dist -> #(
-                prev_dist,
-                prev_dir,
-                set.union(prev_paths, new_paths),
-              )
-              _ -> #(new_dist, val.0, new_paths)
+      let new_visited = set.insert(state.visited, curr_posdir)
+      let #(new_nodes, new_unvisited) =
+        get_edges(curr_posdir)
+        |> list.filter(fn(val) { !set.contains(maze.walls, val.0.0) })
+        |> list.fold(
+          #(state.nodes, set.delete(state.unvisited, curr_posdir)),
+          fn(acc, val) {
+            let #(nodes, unvisited) = acc
+
+            let new_unvisited = case set.contains(state.visited, val.0) {
+              True -> unvisited
+              False -> set.insert(unvisited, val.0)
             }
-          })
-        })
-      find_paths(maze, State(new_visited, new_unvisited))
+            let new_prevs = set.insert(curr_node.prevs, curr_posdir)
+
+            let new_nodes =
+              dict.upsert(nodes, val.0, fn(prev) {
+                let new_dist = curr_node.dist + val.1
+
+                case prev {
+                  Some(Node(prev_dist, prev_paths)) if prev_dist < new_dist ->
+                    Node(prev_dist, prev_paths)
+                  Some(Node(prev_dist, prev_paths)) if prev_dist == new_dist ->
+                    Node(prev_dist, set.union(prev_paths, new_prevs))
+                  _ -> Node(new_dist, new_prevs)
+                }
+              })
+            #(new_nodes, new_unvisited)
+          },
+        )
+      find_paths(
+        maze,
+        State(nodes: new_nodes, visited: new_visited, unvisited: new_unvisited),
+      )
     }
   }
 }
@@ -149,8 +181,9 @@ pub fn main() {
     find_paths(
       maze,
       State(
+        nodes: dict.from_list([#(#(maze.start, E), Node(0, set.new()))]),
         visited: set.new(),
-        unvisited: dict.from_list([#(maze.start, #(0, E, set.new()))]),
+        unvisited: set.from_list([#(maze.start, E)]),
       ),
     )
 
