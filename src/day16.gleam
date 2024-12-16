@@ -59,7 +59,7 @@ type Direction {
 }
 
 type State {
-  State(visited: Set(Pos), unvisited: Dict(Pos, #(Int, Direction)))
+  State(visited: Set(Pos), unvisited: Dict(Pos, #(Int, Direction, Set(Pos))))
 }
 
 fn parse_input(input: String) {
@@ -99,15 +99,17 @@ fn find_paths(maze: Maze, state: State) {
     dict.fold(state.unvisited, Error(Nil), fn(acc, pos, val) {
       case acc {
         Error(..) -> Ok(#(pos, val))
-        Ok(#(_, #(min_distance, _))) if val.0 < min_distance -> Ok(#(pos, val))
+        Ok(#(_, #(min_distance, _, _))) if val.0 < min_distance ->
+          Ok(#(pos, val))
         _ -> acc
       }
     })
-  let #(curr_pos, #(distance, direction)) = current
+  let #(curr_pos, #(distance, direction, paths)) = current
   case curr_pos == maze.end {
-    True -> distance
+    True -> #(distance, set.size(paths) + 1)
     False -> {
       let new_visited = set.insert(state.visited, curr_pos)
+      let new_paths = set.insert(paths, curr_pos)
       let new_unvisited =
         get_adjacent(curr_pos)
         |> list.filter(fn(val) { !set.contains(maze.walls, val.1) })
@@ -120,11 +122,17 @@ fn find_paths(maze: Maze, state: State) {
                 False -> 1
               }
             case prev {
-              Some(#(prev_dist, prev_dir)) if prev_dist <= new_dist -> #(
+              Some(#(prev_dist, prev_dir, prev_paths)) if prev_dist < new_dist -> #(
                 prev_dist,
                 prev_dir,
+                prev_paths,
               )
-              _ -> #(new_dist, val.0)
+              Some(#(prev_dist, prev_dir, prev_paths)) if prev_dist == new_dist -> #(
+                prev_dist,
+                prev_dir,
+                set.union(prev_paths, new_paths),
+              )
+              _ -> #(new_dist, val.0, new_paths)
             }
           })
         })
@@ -137,16 +145,18 @@ pub fn main() {
   use input <- result.try(simplifile.read("./inputs/day16"))
 
   let maze = parse_input(input)
-  let lowest_score =
+  let #(lowest_score, best_tiles) =
     find_paths(
       maze,
       State(
         visited: set.new(),
-        unvisited: dict.from_list([#(maze.start, #(0, E))]),
+        unvisited: dict.from_list([#(maze.start, #(0, E, set.new()))]),
       ),
     )
 
   io.println("Lowest score: " <> int.to_string(lowest_score))
+
+  io.println("Tiles on best paths: " <> int.to_string(best_tiles))
 
   Ok(Nil)
 }
