@@ -2,15 +2,18 @@ import gleam/float
 import gleam/int
 import gleam/io
 import gleam/list
+import gleam/option.{type Option, None, Some}
 import gleam/result
+import gleam/set.{type Set}
 import gleam/string
+import gleam/yielder
 import simplifile
 
-// const example = "Register A: 729
+// const example = "Register A: 2024
 // Register B: 0
 // Register C: 0
 
-// Program: 0,1,5,4,3,0
+// Program: 0,3,5,4,3,0
 // "
 
 type Registers {
@@ -66,85 +69,143 @@ fn update_reg(reg: String, value: Int, machine: Machine) {
   Machine(..machine, reg: new_reg)
 }
 
-fn process_instruction(machine: Machine) {
+fn process_instruction(machine: Machine, target: Option(List(Int))) {
   let pointer = list.drop(machine.program, machine.pointer)
   let inc_pointer_2 = fn() { Machine(..machine, pointer: machine.pointer + 2) }
   case pointer {
     [opcode, operand, ..] -> {
       // io.println(
-      //   "instruction: " <> int.to_string(opcode) <> int.to_string(operand),
+      //   "Processing instruction: "
+      //   <> int.to_string(opcode)
+      //   <> ","
+      //   <> int.to_string(operand),
       // )
-      let new_machine = case opcode {
+      let res = case opcode {
         // adv - A register divided by 2^combo operand
         0 -> {
-          let assert Ok(denominator) =
-            int.power(2, combo_operand_value(operand, machine) |> int.to_float)
-          let result = machine.reg.a / float.round(denominator)
-          update_reg("A", result, inc_pointer_2())
+          let result =
+            int.bitwise_shift_right(
+              machine.reg.a,
+              combo_operand_value(operand, machine),
+            )
+          Ok(#(update_reg("A", result, inc_pointer_2()), target))
         }
         // bxl - bitwise XOR of B register and literal operand
         1 -> {
           let result = int.bitwise_exclusive_or(machine.reg.b, operand)
-          update_reg("B", result, inc_pointer_2())
+          Ok(#(update_reg("B", result, inc_pointer_2()), target))
         }
         // bst - combo operand mod 8 stored to B register
         2 -> {
           let result = combo_operand_value(operand, machine) % 8
-          update_reg("B", result, inc_pointer_2())
+          Ok(#(update_reg("B", result, inc_pointer_2()), target))
         }
         // jnz - A register eq 0 do nothing, otherwise jump by literal operand
         3 -> {
-          case machine.reg.a == 0 {
-            True -> inc_pointer_2()
-            False -> Machine(..machine, pointer: operand)
-          }
+          Ok(#(
+            case machine.reg.a == 0 {
+              True -> inc_pointer_2()
+              False -> Machine(..machine, pointer: operand)
+            },
+            target,
+          ))
         }
         // bxc - bitwise XOR of B and C registers, stored to B
         4 -> {
           let result = int.bitwise_exclusive_or(machine.reg.b, machine.reg.c)
-          update_reg("B", result, inc_pointer_2())
+          Ok(#(update_reg("B", result, inc_pointer_2()), target))
         }
         // out - output the value of combo operand mod 8
         5 -> {
           let result = combo_operand_value(operand, machine) % 8
-          Machine(..inc_pointer_2(), output: [result, ..machine.output])
+          let output_result = fn(rest: Option(List(Int))) {
+            let new_output = [result, ..machine.output]
+            case list.length(new_output) > list.length(machine.program) {
+              True -> Error(Nil)
+              False ->
+                Ok(#(Machine(..inc_pointer_2(), output: new_output), rest))
+            }
+          }
+          case target {
+            None -> output_result(target)
+            Some([h, ..rest]) if h == result -> output_result(Some(rest))
+            _ -> Error(Nil)
+          }
         }
         // bdv - like adv but stored in B register
         6 -> {
-          let assert Ok(denominator) =
-            int.power(2, combo_operand_value(operand, machine) |> int.to_float)
-          let result = machine.reg.a / float.round(denominator)
-          update_reg("B", result, inc_pointer_2())
+          let result =
+            int.bitwise_shift_right(
+              machine.reg.a,
+              combo_operand_value(operand, machine),
+            )
+          Ok(#(update_reg("B", result, inc_pointer_2()), target))
         }
         // cdv - like adv but stored in C register
         7 -> {
-          let assert Ok(denominator) =
-            int.power(2, combo_operand_value(operand, machine) |> int.to_float)
-          let result = machine.reg.a / float.round(denominator)
-          update_reg("C", result, inc_pointer_2())
+          let result =
+            int.bitwise_shift_right(
+              machine.reg.a,
+              combo_operand_value(operand, machine),
+            )
+          Ok(#(update_reg("C", result, inc_pointer_2()), target))
         }
         _ -> panic
       }
-      process_instruction(new_machine)
+      case res {
+        Ok(#(new_machine, new_target)) ->
+          process_instruction(new_machine, new_target)
+        Error(..) -> res
+      }
     }
     _ -> {
       // Halting
-      machine
+      Ok(#(machine, target))
     }
   }
+}
+
+fn check_outputs_program(machine: Machine) {
+  let output = machine |> fn(m) { m.output } |> list.reverse
+  machine.program == output
 }
 
 pub fn main() {
   use input <- result.try(simplifile.read("./inputs/day17"))
 
-  let output =
-    parse_input(input)
-    |> process_instruction
-    |> fn(m) {
-      m.output |> list.reverse |> list.map(int.to_string) |> string.join(",")
-    }
+  let initial_machine = parse_input(input)
+
+  let assert Ok(output) =
+    initial_machine
+    |> process_instruction(None)
+    |> result.map(fn(r) {
+      { r.0 }.output
+      |> list.reverse
+      |> list.map(int.to_string)
+      |> string.join(",")
+    })
 
   io.println("Program output: " <> output)
+
+  let copy_machine =
+    yielder.iterate(228_075_452, fn(i) { i + 1 })
+    |> yielder.fold_until(initial_machine, fn(machine, i) {
+      io.println("Checking reg A = " <> int.to_string(i))
+      let new_machine = update_reg("A", i, machine)
+      case process_instruction(new_machine, Some(machine.program)) {
+        Ok(#(final_machine, _)) -> {
+          case check_outputs_program(final_machine) {
+            True -> list.Stop(new_machine)
+            False -> list.Continue(new_machine)
+          }
+        }
+        Error(..) -> list.Continue(new_machine)
+      }
+    })
+
+  io.println(
+    "Register A to copy program: " <> int.to_string(copy_machine.reg.a),
+  )
 
   Ok(Nil)
 }
