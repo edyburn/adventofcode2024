@@ -1,10 +1,8 @@
-import gleam/float
 import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{type Option, None, Some}
 import gleam/result
-import gleam/set.{type Set}
 import gleam/string
 import gleam/yielder
 import simplifile
@@ -75,10 +73,7 @@ fn process_instruction(machine: Machine, target: Option(List(Int))) {
   case pointer {
     [opcode, operand, ..] -> {
       // io.println(
-      //   "Processing instruction: "
-      //   <> int.to_string(opcode)
-      //   <> ","
-      //   <> int.to_string(operand),
+      //   "instruction: " <> int.to_string(opcode) <> int.to_string(operand),
       // )
       let res = case opcode {
         // adv - A register divided by 2^combo operand
@@ -118,17 +113,17 @@ fn process_instruction(machine: Machine, target: Option(List(Int))) {
         // out - output the value of combo operand mod 8
         5 -> {
           let result = combo_operand_value(operand, machine) % 8
-          let output_result = fn(rest: Option(List(Int))) {
-            let new_output = [result, ..machine.output]
-            case list.length(new_output) > list.length(machine.program) {
-              True -> Error(Nil)
-              False ->
-                Ok(#(Machine(..inc_pointer_2(), output: new_output), rest))
-            }
-          }
           case target {
-            None -> output_result(target)
-            Some([h, ..rest]) if h == result -> output_result(Some(rest))
+            None ->
+              Ok(#(
+                Machine(..inc_pointer_2(), output: [result, ..machine.output]),
+                target,
+              ))
+            Some([h, ..rest]) if h == result ->
+              Ok(#(
+                Machine(..inc_pointer_2(), output: [result, ..machine.output]),
+                Some(rest),
+              ))
             _ -> Error(Nil)
           }
         }
@@ -155,7 +150,7 @@ fn process_instruction(machine: Machine, target: Option(List(Int))) {
       case res {
         Ok(#(new_machine, new_target)) ->
           process_instruction(new_machine, new_target)
-        Error(..) -> res
+        _ -> res
       }
     }
     _ -> {
@@ -165,9 +160,28 @@ fn process_instruction(machine: Machine, target: Option(List(Int))) {
   }
 }
 
-fn check_outputs_program(machine: Machine) {
-  let output = machine |> fn(m) { m.output } |> list.reverse
-  machine.program == output
+fn find_quine(machine: Machine) {
+  let targets =
+    list.fold_right(machine.program, list.new(), fn(acc, i) {
+      case acc {
+        [] -> [[i]]
+        [l, ..rest] -> [[i, ..l], l, ..rest]
+      }
+    })
+    |> list.reverse
+
+  list.fold(targets, 0, fn(acc, target) {
+    yielder.iterate(acc, fn(i) { i + 1 })
+    |> yielder.fold_until(-1, fn(_, i) {
+      let rev_target = list.reverse(target)
+      case process_instruction(update_reg("A", i, machine), Some(target)) {
+        Ok(#(final_machine, _)) if final_machine.output == rev_target ->
+          list.Stop(int.bitwise_shift_left(i, 3))
+        _ -> list.Continue(i)
+      }
+    })
+  })
+  |> int.bitwise_shift_right(3)
 }
 
 pub fn main() {
@@ -187,25 +201,9 @@ pub fn main() {
 
   io.println("Program output: " <> output)
 
-  let copy_machine =
-    yielder.iterate(228_075_452, fn(i) { i + 1 })
-    |> yielder.fold_until(initial_machine, fn(machine, i) {
-      io.println("Checking reg A = " <> int.to_string(i))
-      let new_machine = update_reg("A", i, machine)
-      case process_instruction(new_machine, Some(machine.program)) {
-        Ok(#(final_machine, _)) -> {
-          case check_outputs_program(final_machine) {
-            True -> list.Stop(new_machine)
-            False -> list.Continue(new_machine)
-          }
-        }
-        Error(..) -> list.Continue(new_machine)
-      }
-    })
+  let quine_a = find_quine(initial_machine)
 
-  io.println(
-    "Register A to copy program: " <> int.to_string(copy_machine.reg.a),
-  )
+  io.println("Register A value for quine: " <> int.to_string(quine_a))
 
   Ok(Nil)
 }
