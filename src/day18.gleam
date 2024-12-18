@@ -6,6 +6,7 @@ import gleam/option.{Some}
 import gleam/result
 import gleam/set.{type Set}
 import gleam/string
+import gleam/yielder
 import simplifile
 
 // const example = "5,4
@@ -82,7 +83,7 @@ fn is_open(pos: Pos, space: MemorySpace) {
 }
 
 fn find_path(space: MemorySpace, state: PathState) {
-  let assert Ok(#(curr_pos, curr_node)) =
+  use #(curr_pos, curr_node) <- result.try(
     set.fold(
       state.unvisited,
       Error(Nil),
@@ -94,10 +95,11 @@ fn find_path(space: MemorySpace, state: PathState) {
           _ -> acc
         }
       },
-    )
+    ),
+  )
   case curr_pos == space.end {
     True -> {
-      list.length(curr_node.path)
+      Ok(list.length(curr_node.path))
     }
     False -> {
       let new_visited = set.insert(state.visited, curr_pos)
@@ -141,20 +143,38 @@ pub fn main() {
   let input_size = 70
 
   let space = parse_input(input, input_size)
+  let initial_state =
+    PathState(
+      nodes: dict.from_list([#(#(0, 0), Node(0, []))]),
+      visited: set.new(),
+      unvisited: set.from_list([#(0, 0)]),
+    )
 
   let corrupted =
     MemorySpace(..space, bytes: dict.filter(space.bytes, fn(_, i) { i < 1024 }))
-  let min_steps =
-    find_path(
-      corrupted,
-      PathState(
-        nodes: dict.from_list([#(corrupted.start, Node(0, []))]),
-        visited: set.new(),
-        unvisited: set.from_list([corrupted.start]),
-      ),
-    )
+  let assert Ok(min_steps) = find_path(corrupted, initial_state)
 
   io.println("Min steps to exit: " <> int.to_string(min_steps))
+
+  let blocking_byte =
+    yielder.iterate(1024, fn(i) { i + 1 })
+    |> yielder.fold_until("", fn(acc, limit) {
+      let corrupted =
+        MemorySpace(
+          ..space,
+          bytes: dict.filter(space.bytes, fn(_, i) { i < limit }),
+        )
+      case find_path(corrupted, initial_state) {
+        Error(..) -> {
+          let assert [pos] =
+            dict.filter(space.bytes, fn(_, i) { i == limit - 1 }) |> dict.keys
+          list.Stop(int.to_string(pos.0) <> "," <> int.to_string(pos.1))
+        }
+        Ok(_) -> list.Continue(acc)
+      }
+    })
+
+  io.println("Coordinates of byte preventing exit: " <> blocking_byte)
 
   Ok(Nil)
 }
