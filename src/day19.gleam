@@ -31,33 +31,35 @@ fn parse_input(input: String) {
 
 fn try_design(design: String, patterns: List(String), cache) {
   use <- memo.memoize(cache, design)
-  list.any(patterns, fn(pattern) {
+  list.map(patterns, fn(pattern) {
     case string.starts_with(design, pattern) {
       True -> {
         let new_design = string.drop_start(design, string.length(pattern))
         case new_design {
-          "" -> True
+          "" -> 1
           _ -> try_design(new_design, patterns, cache)
         }
       }
-      False -> False
+      False -> 0
     }
   })
-}
-
-fn find_possible_designs(patterns: List(String), designs: List(String), cache) {
-  list.filter(designs, try_design(_, patterns, cache))
-  |> list.length
+  |> int.sum
 }
 
 pub fn main() {
   use input <- result.try(simplifile.read("./inputs/day19"))
 
-  let parsed = parse_input(input)
+  let #(patterns, designs) = parse_input(input)
 
   use cache <- memo.create()
-  let possible_designs = find_possible_designs(parsed.0, parsed.1, cache)
+  let design_arrangements = list.map(designs, try_design(_, patterns, cache))
+  let possible_designs =
+    list.filter(design_arrangements, fn(a) { a > 0 }) |> list.length
   io.println("Possible designs: " <> int.to_string(possible_designs))
+
+  io.println(
+    "Ways to make designs: " <> int.to_string(int.sum(design_arrangements)),
+  )
 
   Ok(Nil)
 }
