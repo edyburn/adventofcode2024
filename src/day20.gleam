@@ -135,6 +135,34 @@ fn find_cheats(path: Dict(Pos, Int)) {
   })
 }
 
+fn get_total_offset(a: Pos, b: Pos) {
+  int.absolute_value(a.0 - b.0) + int.absolute_value(a.1 - b.1)
+}
+
+fn find_long_cheats(path: Dict(Pos, Int)) {
+  dict.to_list(path)
+  |> list.flat_map(fn(entry) {
+    let #(pos, dist) = entry
+    dict.delete(path, pos)
+    |> dict.to_list
+    |> list.map(fn(cheat) {
+      let #(cheat_pos, cheat_dist) = cheat
+      let offset = get_total_offset(pos, cheat_pos)
+      case offset <= 20 {
+        True -> {
+          let saved = cheat_dist - dist - offset
+          case saved > 0 {
+            True -> Ok(saved)
+            False -> Error(Nil)
+          }
+        }
+        False -> Error(Nil)
+      }
+    })
+    |> result.values
+  })
+}
+
 pub fn main() {
   use input <- result.try(simplifile.read("./inputs/day20"))
 
@@ -155,6 +183,24 @@ pub fn main() {
 
   io.println(
     "Number of cheats saving at least 100ps: " <> int.to_string(cheats_gte_100),
+  )
+
+  // This was for testing the example:
+  // find_long_cheats(path)
+  // |> list.group(function.identity)
+  // |> dict.map_values(fn(_, l) { list.length(l) })
+  // |> dict.to_list
+  // |> list.sort(fn(a, b) { int.compare(a.0, b.0) })
+  // |> io.debug
+
+  let long_cheats_gte_100 =
+    find_long_cheats(path)
+    |> list.filter(fn(i) { i >= 100 })
+    |> list.length
+
+  io.println(
+    "Number of long cheats saving at least 100ps: "
+    <> int.to_string(long_cheats_gte_100),
   )
 
   Ok(Nil)
