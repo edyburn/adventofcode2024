@@ -4,6 +4,7 @@ import gleam/int
 import gleam/io
 import gleam/list
 import gleam/option.{Some}
+import gleam/pair
 import gleam/regexp
 import gleam/result
 import gleam/set.{type Set}
@@ -179,11 +180,13 @@ fn check_id(id: String, sources: Dict(String, Source), op: Op) {
   }
 }
 
-fn swap(sources: Dict(String, Source), a_id, b_id) {
+fn swap(sources: Dict(String, Source), a_id, b_id, swaps) {
   let assert Ok(a_val) = dict.get(sources, a_id)
   let assert Ok(b_val) = dict.get(sources, b_id)
-  io.println("Swapping: " <> a_id <> " " <> b_id)
-  sources |> dict.insert(a_id, b_val) |> dict.insert(b_id, a_val)
+  let new_sources =
+    sources |> dict.insert(a_id, b_val) |> dict.insert(b_id, a_val)
+  let new_swaps = list.append(swaps, [a_id, b_id])
+  #(new_sources, new_swaps)
 }
 
 pub fn main() {
@@ -196,30 +199,37 @@ pub fn main() {
 
   io.println("Decimal number from z wires: " <> int.to_string(num_output))
 
-  source_map
-  |> dict.keys
-  |> list.filter(string.starts_with(_, "z"))
-  |> list.sort(string.compare)
-  |> list.fold(source_map, fn(sources, z_id) {
-    let n =
-      string.replace(z_id, "z", "")
-      |> int.parse
-      |> result.unwrap(0)
-    let expected_op = make_expected_op(n, False)
-    case check_id(z_id, sources, expected_op) {
-      Ok(_) -> sources
-      Error(#(id, op)) -> {
-        let match =
-          sources
-          |> dict.to_list
-          |> list.find(fn(entry) { source_to_op(entry.0, sources) == op })
-        case match {
-          Ok(#(replacement, _)) -> swap(sources, id, replacement)
-          Error(..) -> sources
+  let swaps =
+    source_map
+    |> dict.keys
+    |> list.filter(string.starts_with(_, "z"))
+    |> list.sort(string.compare)
+    |> list.fold(#(source_map, []), fn(acc, z_id) {
+      let #(sources, swaps) = acc
+      let n =
+        string.replace(z_id, "z", "")
+        |> int.parse
+        |> result.unwrap(0)
+      let expected_op = make_expected_op(n, False)
+      case check_id(z_id, sources, expected_op) {
+        Ok(_) -> acc
+        Error(#(id, op)) -> {
+          let match =
+            sources
+            |> dict.to_list
+            |> list.find(fn(entry) { source_to_op(entry.0, sources) == op })
+          case match {
+            Ok(#(replacement, _)) -> swap(sources, id, replacement, swaps)
+            Error(..) -> acc
+          }
         }
       }
-    }
-  })
+    })
+    |> pair.second
+    |> list.sort(string.compare)
+    |> string.join(",")
+
+  io.println("Swaps: " <> swaps)
 
   Ok(Nil)
 }
